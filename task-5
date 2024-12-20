@@ -1,0 +1,129 @@
+import tensorflow as tf
+from tensorflow.keras import layers, models
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.applications import VGG16
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Step 1: Load and preprocess the CIFAR-10 dataset
+from tensorflow.keras.datasets import cifar10
+
+# Load CIFAR-10 dataset (60,000 32x32 color images in 10 classes)
+(x_train, y_train), (x_test, y_test) = cifar10.load_data()
+
+# Normalize the pixel values to [0, 1]
+x_train, x_test = x_train / 255.0, x_test / 255.0
+
+# Step 2: Data Augmentation
+# We apply data augmentation to improve the model's generalization ability.
+train_datagen = ImageDataGenerator(
+    rotation_range=20,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True,
+    fill_mode='nearest'
+)
+
+train_datagen.fit(x_train)
+
+# Step 3: CNN Architecture (Custom CNN)
+def build_cnn():
+    model = models.Sequential()
+
+    # First convolutional block
+    model.add(layers.Conv2D(32, (3, 3), activation='relu', input_shape=(32, 32, 3)))
+    model.add(layers.MaxPooling2D((2, 2)))
+
+    # Second convolutional block
+    model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+    model.add(layers.MaxPooling2D((2, 2)))
+
+    # Third convolutional block
+    model.add(layers.Conv2D(128, (3, 3), activation='relu'))
+    model.add(layers.MaxPooling2D((2, 2)))
+
+    # Flatten and fully connected layer
+    model.add(layers.Flatten())
+    model.add(layers.Dense(128, activation='relu'))
+
+    # Output layer
+    model.add(layers.Dense(10, activation='softmax'))  # 10 classes in CIFAR-10
+
+    return model
+
+# Build the model
+cnn_model = build_cnn()
+cnn_model.summary()
+
+# Step 4: Compile the model
+cnn_model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+
+# Step 5: Train the model
+history = cnn_model.fit(
+    train_datagen.flow(x_train, y_train, batch_size=64),
+    epochs=10,
+    validation_data=(x_test, y_test)
+)
+
+# Step 6: Transfer Learning with Pretrained VGG16
+# We will load VGG16, exclude the top layers, and use it as a feature extractor.
+
+def build_vgg16_model():
+    # Load the VGG16 model pre-trained on ImageNet, without the top (classification) layers
+    base_model = VGG16(weights='imagenet', include_top=False, input_shape=(32, 32, 3))
+
+    # Freeze the base model layers
+    base_model.trainable = False
+
+    model = models.Sequential()
+    model.add(base_model)
+    model.add(layers.Flatten())
+    model.add(layers.Dense(128, activation='relu'))
+    model.add(layers.Dense(10, activation='softmax'))  # 10 classes in CIFAR-10
+
+    return model
+
+# Build the VGG16 model
+vgg16_model = build_vgg16_model()
+vgg16_model.summary()
+
+# Compile the VGG16 model
+vgg16_model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+
+# Step 7: Train the VGG16 model with Transfer Learning
+history_vgg16 = vgg16_model.fit(
+    train_datagen.flow(x_train, y_train, batch_size=64),
+    epochs=10,
+    validation_data=(x_test, y_test)
+)
+
+# Step 8: Plot the training and validation accuracy/loss
+def plot_history(history, model_name):
+    plt.figure(figsize=(12, 4))
+
+    # Plot accuracy
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history['accuracy'], label='Train Accuracy')
+    plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+    plt.title(f'{model_name} Accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+
+    # Plot loss
+    plt.subplot(1, 2, 2)
+    plt.plot(history.history['loss'], label='Train Loss')
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.title(f'{model_name} Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
+
+# Plot the training results for both models
+plot_history(history, 'Custom CNN')
+plot_history(history_vgg16, 'VGG16 Transfer Learning')
